@@ -6,7 +6,9 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ClientRepository extends JpaRepository<Client, String> {
+    //FIND CLIENT BY CIN
     public Client findByCin(String cin);
-    boolean existsById(String cin);
 
+    //CHECK: CIN EXISTS
+    boolean existsById(String cin);
 }

@@ -1,5 +1,6 @@
 package org.app.demokeyclock.config;
 
+import lombok.extern.slf4j.Slf4j;
 import org.app.demokeyclock.entities.Client;
 import org.app.demokeyclock.services.ClientProcessor;
 import org.app.demokeyclock.services.JobCompletionListener;
@@ -26,26 +27,29 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
 import java.io.File;
+
 @Configuration
 @EnableBatchProcessing
+@Slf4j
 public class ClientBatchConfig {
+
     @Bean
     public PlatformTransactionManager transactionManager(DataSource dataSource) {
         return new DataSourceTransactionManager(dataSource);
     }
+
     public boolean fileExists(String filePath) {
         File file = new File(filePath);
         return file.exists() && !file.isDirectory();
     }
 
-
     @Bean
     public FlatFileItemReader<Client> reader() {
         String file = "C:/Users/elyaz/Desktop/doc/client.txt";
         if (fileExists(file)) {
-            System.out.println("File exists and is accessible.");
+            log.info("File exists and is accessible: {}", file);
         } else {
-            System.out.println("File not found or not accessible.");
+            log.error("File not found or not accessible: {}", file);
         }
         return new FlatFileItemReaderBuilder<Client>()
                 .name("clientItemReader")
@@ -58,6 +62,7 @@ public class ClientBatchConfig {
                 }})
                 .build();
     }
+
     @Bean
     public JdbcBatchItemWriter<Client> writer(DataSource dataSource) {
         return new JdbcBatchItemWriterBuilder<Client>()
@@ -65,7 +70,6 @@ public class ClientBatchConfig {
                 .sql("INSERT INTO client (cin, adresse, nom, prenom, telephone) " +
                         "VALUES (:cin, :adresse, :nom, :prenom, :telephone) " +
                         "ON DUPLICATE KEY UPDATE adresse = VALUES(adresse), nom = VALUES(nom), prenom = VALUES(prenom), telephone = VALUES(telephone);")
-
                 .dataSource(dataSource)
                 .build();
     }
@@ -87,15 +91,14 @@ public class ClientBatchConfig {
                 .skipLimit(100)
                 .build();
     }
+
     @Bean
     public Job importClientJob(JobCompletionListener listener, Step maskingStep, JobRepository jobRepository) {
-        return new JobBuilder("importClientJob",jobRepository)
+        return new JobBuilder("importClientJob", jobRepository)
                 .incrementer(new RunIdIncrementer())
                 .listener(listener)
                 .flow(maskingStep)
-
                 .end()
-
                 .build();
     }
 }

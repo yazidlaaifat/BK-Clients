@@ -1,80 +1,106 @@
 package org.app.demokeyclock.controllers;
 
-import org.app.demokeyclock.entities.Client;
-import org.app.demokeyclock.repositories.ClientRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.app.demokeyclock.dto.ClientDTO;
+import org.app.demokeyclock.services.ClientService;
+
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
 @CrossOrigin("*")
+@RequiredArgsConstructor
+@Slf4j
 public class ClientController {
-    private final ClientRepository clientRepository;
 
-    public ClientController(ClientRepository clientRepository) {
-        this.clientRepository = clientRepository;
+
+    // SERVICES
+    private final ClientService clientService;
+    private final JobLauncher jobLauncher;
+    private final Job importClientJob;
+
+    @PostMapping("/run")
+    public String runBatchJob() {
+        try {
+            jobLauncher.run(importClientJob, new JobParametersBuilder()
+                    .addLong("time", System.currentTimeMillis())
+                    .toJobParameters());
+            return "Job started successfully!";
+        } catch (Exception e) {
+            return "Failed to start job: " + e.getMessage();
+        }
     }
 
+    // ENDPOINT1 : Retrieve a list of all clients
     @GetMapping("/clients")
     @PreAuthorize("hasAuthority('ADMIN')")
-    public List<Client> clientList() {
-        return clientRepository.findAll();
+    public List<ClientDTO> clientList() {
+        log.info("Fetching all clients");
+        return clientService.getAllClients();
     }
 
+    // ENDPOINT2: Retrieve a client by their CIN
     @GetMapping("/clients/{cin}")
     @PreAuthorize("hasAuthority('USER') or hasAuthority('ADMIN')")
-    public ResponseEntity<Client> clientByCin(@PathVariable String cin) {
-        Optional<Client> client = Optional.ofNullable(clientRepository.findByCin(cin));
-        return client.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    public ResponseEntity<ClientDTO> clientByCin(@PathVariable String cin) {
+        log.info("Fetching client with CIN: {}", cin);
+        return clientService.getClientByCin(cin)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> {
+                    log.warn("Client with CIN {} not found", cin);
+                    return ResponseEntity.notFound().build();
+                });
     }
 
+    // ENDPOINT3: Add a new client
     @PostMapping("/clients")
     @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<Client> addClient(@RequestBody Client client) {
-        if (clientRepository.existsById(client.getCin())) {
-            return ResponseEntity.badRequest().build();
+    public ResponseEntity<ClientDTO> addClient(@RequestBody ClientDTO clientDTO) {
+        try {
+            log.info("Adding new client: {}", clientDTO);
+            return ResponseEntity.ok(clientService.addClient(clientDTO));
+        } catch (RuntimeException e) {
+            log.error("Error adding client: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(null);
         }
-        return ResponseEntity.ok(clientRepository.save(client));
     }
 
+    // ENDPOINT4: Update an existing client based on their CIN
     @PutMapping("/clients/{cin}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<Client> updateClient(@PathVariable String cin, @RequestBody Client clientDetails) {
-        return clientRepository.findById(cin).map(client -> {
-            client.setNom(clientDetails.getNom());
-            client.setPrenom(clientDetails.getPrenom());
-            client.setTelephone(clientDetails.getTelephone());
-            client.setAdresse(clientDetails.getAdresse());
-            return ResponseEntity.ok(clientRepository.save(client));
-        }).orElseGet(() -> ResponseEntity.notFound().build());
+    public ResponseEntity<ClientDTO> updateClient(@PathVariable String cin, @RequestBody ClientDTO clientDTO) {
+        log.info("Updating client with CIN: {}", cin);
+        return clientService.updateClient(cin, clientDTO)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> {
+                    log.warn("Client with CIN {} not found for update", cin);
+                    return ResponseEntity.notFound().build();
+                });
     }
 
+    // ENDPOINT5: Delete a client based on their CIN
     @DeleteMapping("/clients/{cin}")
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<Void> deleteClient(@PathVariable String cin) {
-        if (!clientRepository.existsById(cin)) {
-            return ResponseEntity.notFound().build();
-        }
-        clientRepository.deleteById(cin);
-        return ResponseEntity.noContent().build();
+        log.info("Deleting client with CIN: {}", cin);
+        return clientService.deleteClient(cin)
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.notFound().build();
     }
 
+    // ENDPOINT6: Filter clients based on CIN
     @GetMapping("/clients/filter")
     @PreAuthorize("hasAuthority('USER') or hasAuthority('ADMIN')")
-    public List<Client> filterClients(@RequestParam(required = false) String cin) {
-        if (cin != null) {
-            // Filtrage dynamique : Si 'cin' est fourni, on retourne le client correspondant
-            Client client = clientRepository.findByCin(cin);
-            return client != null ? List.of(client) : List.of();  // Retourne une liste avec le client ou vide si non trouvé
-        } else {
-            // Si aucun 'cin' n'est fourni, retourne tous les clients
-            return clientRepository.findAll();
-        }
+    public List<ClientDTO> filterClients(@RequestParam(required = false) String cin) {
+        log.info("Filtering clients with CIN: {}", cin);
+        return clientService.filterClients(cin);
     }
-
 }
